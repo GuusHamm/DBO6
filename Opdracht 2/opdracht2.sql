@@ -27,7 +27,7 @@ CREATE TABLE Categorie
 CREATE TABLE Auteur
 (
   id         SERIAL PRIMARY KEY,
-  voornaam   VARCHAR(64),/mnt/ssd/Fontys/S6/ESD6/goverment-angular
+  voornaam   VARCHAR(64),
   achternaam VARCHAR(255),
   persbureau VARCHAR(255),
   details    VARCHAR(2048)
@@ -51,7 +51,7 @@ CREATE TABLE Reactie
   geplaatstOp     TIMESTAMP,
   ipAdres         VARCHAR(39),
   reactieTekst    VARCHAR(1024),
-  zichtbaar       NUMERIC(1),
+  zichtbaar       BOOLEAN,
   nieuwsberichtId INT REFERENCES Nieuwsbericht (id)
 );
 
@@ -69,7 +69,7 @@ CREATE TABLE GerelateerdNieuws
   PRIMARY KEY (nieuwsberichtId, gerelateerdNieuwsberichtId)
 );
 
-CREATE OR REPLACE FUNCTION create_test_data(tablename VARCHAR(255), number INTEGER)
+CREATE OR REPLACE FUNCTION create_test_data(tablename VARCHAR(255), number INTEGER, depth INTEGER = 1)
   RETURNS INTEGER
 AS $$
 from faker import Faker
@@ -77,6 +77,9 @@ from collections import OrderedDict
 import plpy
 
 faker = Faker()
+
+if depth > 5:
+    raise ValueError("You went to deep :P")
 
 column_prepare = plpy.prepare('SELECT * FROM information_schema.columns WHERE table_name=$1', ['varchar'])
 
@@ -105,15 +108,25 @@ for column in column_names:
 
     if column_name in foreign_keys.keys():
         foreign_key = foreign_keys[column_name]
-        if foreign_key['constraint_type'] == 'PRIMARY KEY':
-            continue
-        foreign_key_values = plpy.execute(foreign_key_value_prepare % (foreign_key['foreign_column_name'], foreign_key['foreign_table_name']), number)
-        query_columns[column_name] = column['data_type']
-        for i in range(generate_count):
-            random_value = foreign_key_values[faker.random.randint(0, number - 1)]
-            query_values[i].append(random_value[foreign_key['foreign_column_name']])
+        if foreign_key['constraint_type'] != 'PRIMARY KEY':
+            foreign_key_values = plpy.execute(foreign_key_value_prepare % (foreign_key['foreign_column_name'], foreign_key['foreign_table_name']), number)
+            query_columns[column_name] = column['data_type']
 
-        continue
+            plpy.log(foreign_key_values)
+            plpy.log(len(foreign_key_values))
+
+            if len(foreign_key_values) == 0 :
+                query = "SELECT create_test_data('%s', 10, %d)" % (foreign_key['foreign_table_name'], depth + 1)
+                plpy.log(query)
+                plpy.log(plpy.execute(query))
+                foreign_key_values = plpy.execute(foreign_key_value_prepare % (foreign_key['foreign_column_name'], foreign_key['foreign_table_name']), number)
+                plpy.log(foreign_key_values)
+
+            for i in range(generate_count):
+                random_value = foreign_key_values[faker.random.randint(0, number - 1)]
+                query_values[i].append(random_value[foreign_key['foreign_column_name']])
+
+            continue
 
     # if column_name in ['id'] and column['column_default']:
     #     # do nothing with this column, assume autogenerate
@@ -173,6 +186,12 @@ for column in column_names:
             query_values[i].append(faker.ipv4(network=False))
         continue
 
+    if column['data_type'] in ['boolean']:
+        query_columns[column_name] = column['data_type']
+        for i in range(generate_count):
+            query_values[i].append(faker.boolean())
+        continue
+
 query = query_base % (tablename,
                       ','.join(query_columns.keys()),
                       ','.join(['$' + str(i) for i in range(1, len(query_columns.keys()) + 1)])
@@ -195,32 +214,65 @@ for value_line in query_values:
 return inserted
 $$ LANGUAGE plpythonu;
 
-SELECT create_test_data('nieuwsbericht', 10);
-SELECT create_test_data('mailabonnee', 10);
-SELECT * from Auteur;
-SELECT * from Categorie;
-SELECT * from MailAbonnee;
-SELECT * from Nieuwsbericht;
+SELECT create_test_data('reactie', 10);
 
-SELECT *
-FROM MailAbonnee;
 
-SELECT *
-FROM information_schema.columns
-WHERE table_name = 'mailabonnee';
 
-SELECT *
-FROM information_schema.columns
-WHERE table_schema = 'public';
 
-SELECT
-  tc.constraint_name, tc.table_name, kcu.column_name,
-  ccu.table_name AS foreign_table_name,
-  ccu.column_name AS foreign_column_name
-FROM
-  information_schema.table_constraints AS tc
-  JOIN information_schema.key_column_usage AS kcu
-    ON tc.constraint_name = kcu.constraint_name
-  JOIN information_schema.constraint_column_usage AS ccu
-    ON ccu.constraint_name = tc.constraint_name
-WHERE tc.table_name = 'nieuwsbericht';
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- SELECT * from Auteur;
+-- SELECT * from Categorie;
+-- SELECT * from MailAbonnee;
+-- SELECT * from Nieuwsbericht;
+
+-- SELECT tc.constraint_name, tc.constraint_type, tc.table_name, kcu.column_name, ccu.table_name AS foreign_table_name, ccu.column_name AS foreign_column_name FROM information_schema.table_constraints AS tc JOIN information_schema.key_column_usage AS kcu ON tc.constraint_name = kcu.constraint_name JOIN information_schema.constraint_column_usage AS ccu ON ccu.constraint_name = tc.constraint_name WHERE tc.table_name = 'categorie'
+--
+-- SELECT *
+-- FROM MailAbonnee;
+--
+-- SELECT *
+-- FROM information_schema.columns
+-- WHERE table_name = 'mailabonnee';
+--
+-- SELECT *
+-- FROM information_schema.columns
+-- WHERE table_schema = 'public';
+--
+-- SELECT
+--   tc.constraint_name, tc.table_name, kcu.column_name,
+--   ccu.table_name AS foreign_table_name,
+--   ccu.column_name AS foreign_column_name
+-- FROM
+--   information_schema.table_constraints AS tc
+--   JOIN information_schema.key_column_usage AS kcu
+--     ON tc.constraint_name = kcu.constraint_name
+--   JOIN information_schema.constraint_column_usage AS ccu
+--     ON ccu.constraint_name = tc.constraint_name
+-- WHERE tc.table_name = 'nieuwsbericht';
